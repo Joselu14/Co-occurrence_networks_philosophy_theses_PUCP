@@ -1,2 +1,2 @@
 # Co-occurrence_networks_philosophy_theses_PUCP
-This is a brief exercise on co-occurrence networks employing real data from philosophy PUCP theses.
+This is a brief exercise on co-occurrence networks employing real data from philosophy PUCP theses. On the basis of some Catalogues found in the Central Library of the Pontifical Catholic University of Peru, I labeled (keywords attribution) the theses produced in the philosophy degree and doctorate programmes of PUPC between 1931 and 1986. Employing these labels, I constructed the weighted networks. Simply, each label is a node and if I could find two labels in the same thesis, I traced an arist between such nodes.
