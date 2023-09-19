@@ -1,0 +1,216 @@
+---
+title: "Redes semánticas - Filosofía"
+author: "Jose Luis Cabrera Guillermo"
+date: "2022-10-27"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Redes semánticas - Temas de Filosofía PUCP
+
+En este breve trabajo, intentaremos mapear los intereses de los filósofos de la Pontificia Universidad Católica del Perú así como analizar concentraciones y tendencias de la investigación filosófica en dicha casa de estudios. Para ello, nos serviremos de un dataset que contiene los títulos, autores, año de publicación y keywords de las tesis de bachillerato y doctorado de la mencionada especialidad entre los años 1931 y 1986. Este dataset fue elaborado por el autor mediante la digitalización de los *Resúmenes de Tesis de Bachillerato y Doctorado en Filosofía (1931-1986)* elaborados por la Dirección Académica de Investigación de la Pontificia Universidad Católica del Perú en 1988. Este es un volumen de una colección de catálogos de tesis que incluyen nombres de los autores, código de tesis, título, resumen, asesor y año de publicación. El dataset se construyó transcribiendo estos datos y sintetizando los resúmenes en un conjunto de 3 a 5 keywords por tesis, a fin de poder realizar un análisis de redes semánticas. A continuación, construiremos un modelo descriptivo de redes semánticas para poder analizar los intereses temáticos de los estudiantes de esta especialidad.
+
+## Herramientas a usar
+
+Debemos descargar y abrir ciertas paqueterías que nos permitirán construir las redes semánticas y plotear los grafos.
+
+```{r, message=F, warning=F}
+# install.packages("tidytext")
+# install.packages("tm")
+# install.packages("ggraph")
+# install.packages("igraph")
+# install.packages("stringr")
+# install.packages("network")
+# install.packages("tnet")
+# install.packages("ggnetwork")
+library(rio)
+library(tidytext)
+library(tm)
+library(ggraph)
+library(igraph)
+library(stringr)
+library(dplyr)
+library(network)
+library(tnet)
+library(ggnetwork)
+```
+
+## Importamos el dataset y preparamos los datos
+
+Importamos la data conjunta y creamos subconjuntos (datos de tesis de bachillerato y datos de tesis de doctorado):
+
+```{r}
+data <- import("Tesis bachillerato y doctorado Filosofía.xlsx")
+data_bachelor <- data[data$Grado == "Bachiller", ]
+data_bachelor <- data_bachelor[complete.cases(data_bachelor$`Palabras clave`), ]
+data_doctor <- data[data$Grado == "Doctorado", ]
+data_doctor <- data_doctor[complete.cases(data_doctor$`Palabras clave`), ]
+```
+
+## Construcción de las redes semánticas para las tesis de Bachillerato
+
+```{r}
+#Frecuencias para tesis de bachiller
+frecuencia_bach <- data_bachelor$`Palabras clave` %>% 
+  str_split(", ") %>% 
+  unlist() %>% 
+  table() %>% 
+  data.frame()
+colnames(frecuencia_bach) <- c("Keyword", "Frecuencia")
+frecuencia_bach
+```
+
+```{r, message=F, warning=F}
+a <- data_bachelor$`Palabras clave` %>% 
+  str_split(", ") %>% 
+  lapply(function(x){
+    expand.grid(x, x, w = 1 / length(x), stringsAsFactors = F)
+  }) %>% 
+  bind_rows()
+```
+
+```{r, message=F, warning=F}
+a <- apply(a[, -3], 1, str_sort) %>%
+  t %>%
+  data.frame(stringsAsFactors = FALSE) %>%
+  mutate(w = a$w)
+```
+
+```{r, message=F, warning=F}
+a <- group_by(a, X1, X2) %>%
+  summarise(w = sum(w)) %>%
+  filter(X1 != X2)
+```
+
+Construimos la red no-direccionada de un modo:
+
+```{r, message=F, warning=F}
+# undirected network
+n <- network(a[, -3], directed = FALSE)
+
+stopifnot(nrow(a) == network.edgecount(n))
+set.edge.attribute(n, "weight", a$w)
+
+# weighted degree at alpha = 1
+t <- as.edgelist(n, attrname = "weight") %>%
+  symmetrise_w %>%
+  as.tnet %>%
+  degree_w
+
+stopifnot(nrow(t) == network.size(n))
+set.vertex.attribute(n, "degree_w", t[, "output" ])
+```
+
+Procedemos a filtrar datos de peso menor:
+
+```{r, message=F, warning=F}
+# show only keywords at or above median weighted degree
+l <- n %v% "degree_w"
+l <- ifelse(l >= 4, network.vertex.names(n), NA)
+
+stopifnot(length(l) == network.size(n))
+set.vertex.attribute(n, "label", l)
+```
+
+### Visualización de la red de temas de tesis de bachillerato PUCP:
+
+```{r, fig.height= unit(20, "cm"), fig.width= unit(30, "cm")}
+set.seed(175)
+red <- ggplot(n, aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(aes(color = weight)) +
+  geom_nodes(color = "cornflowerblue") +
+  geom_nodelabel(aes(size = degree_w, label = label),
+                 color = "grey20", label.size = NA) +
+  scale_size_continuous(range = c(1, 8)) +
+  scale_color_gradient2(low = "#C263F9", midpoint = 0.75, high = "#830CC4") +
+  guides(size = FALSE, color = FALSE) + 
+  theme_blank()
+red
+```
+
+## Construcción de las redes semánticas para las tesis de Doctorado
+
+```{r}
+#Frecuencias para tesis de bachiller
+frecuencia_doct <- data_doctor$`Palabras clave` %>% 
+  str_split(", ") %>% 
+  unlist() %>% 
+  table() %>% 
+  data.frame()
+colnames(frecuencia_bach) <- c("Keyword", "Frecuencia")
+frecuencia_doct
+```
+
+```{r, message=F, warning=F}
+b <- data_doctor$`Palabras clave` %>% 
+  str_split(", ") %>% 
+  lapply(function(x){
+    expand.grid(x, x, w = 1 / length(x), stringsAsFactors = F)
+  }) %>% 
+  bind_rows()
+```
+
+```{r, message=F, warning=F}
+b <- apply(b[, -3], 1, str_sort) %>%
+  t %>%
+  data.frame(stringsAsFactors = FALSE) %>%
+  mutate(w = b$w)
+```
+
+```{r, message=F, warning=F}
+b <- group_by(b, X1, X2) %>%
+  summarise(w = sum(w)) %>%
+  filter(X1 != X2)
+```
+
+Construimos la red no-direccionada de un modo:
+
+```{r, message=F, warning=F}
+# undirected network
+n2 <- network(b[, -3], directed = FALSE)
+
+stopifnot(nrow(b) == network.edgecount(n2))
+set.edge.attribute(n2, "weight", b$w)
+
+# weighted degree at alpha = 1
+p <- as.edgelist(n2, attrname = "weight") %>%
+  symmetrise_w %>%
+  as.tnet %>%
+  degree_w
+
+stopifnot(nrow(p) == network.size(n2))
+set.vertex.attribute(n2, "degree_w", p[, "output" ])
+```
+
+Procedemos a filtrar datos de peso menor:
+
+```{r, message=F, warning=F}
+# show only keywords at or above median weighted degree
+l1 <- n2 %v% "degree_w"
+l1 <- ifelse(l1 >= 4, network.vertex.names(n2), NA)
+
+stopifnot(length(l1) == network.size(n2))
+set.vertex.attribute(n2, "label", l1)
+```
+
+### Visualización de la red de temas de tesis de doctorado PUCP:
+
+```{r, fig.height= unit(20, "cm"), fig.width= unit(30, "cm")}
+set.seed(176)
+red2 <- ggplot(n2, aes(x, y, xend = xend, yend = yend)) +
+  geom_edges(aes(color = weight)) +
+  geom_nodes(color = "cornflowerblue") +
+  geom_nodelabel(aes(size = degree_w, label = label),
+                 color = "grey20", label.size = NA) +
+  scale_size_continuous(range = c(1, 8)) +
+  scale_color_gradient2(low = "#C263F9", midpoint = 0.75, high = "#830CC4") +
+  guides(size = FALSE, color = FALSE) + 
+  theme_blank()
+red2
+```
+
+## Conclusiones
+
+Mediante un breve análisis gráfico de las redes semánticas construidas, podemos concluir que los intereses temáticos de los estudiantes de filosofía de la Pontificia Universidad Católica del Perú se han concentrado en dos grandes tópicos: Teoría del conocimiento y Metafísica, articulando estos grandes temas con una diversidad de campos como la teología, el existencialismo, la filosofía cristiana, entre otros. Adicionalmente, pese a que no se visualiza en las redes debido a la exclusión de etiquetas, encontramos zonas insulares como los intereses en torno a lógica o marxismo, los cuales no presentan mucha vinculación con temáticas recurrentes. Asimismo, es cuanto menos peculiar que el campo de la teología no haya sido trabajado de manera conjunta a la Filosofía de la historia, siendo la teleología cristiana un potencial vínculo entre ambos respectos.
+En fin, las redes semánticas muestran un predominio de temas epistemológicos, metafísicos y religiosos con una presencia menor de temas de filosofía práctica y con la aparición de ciertos pensadores recurrentes: Santo Tomás, Bergson, San Agustín y Husserl.
